@@ -1,9 +1,11 @@
 """
 Custom integration to provide a service for recognizing audio files
 using one of the system's Speech-to-Text (STT) providers.
+This version uses in-memory transcoding and non-blocking file reads.
 """
 import asyncio
 import logging
+import io
 from collections.abc import AsyncIterable
 
 from homeassistant.config_entries import ConfigEntry
@@ -17,133 +19,136 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-async def _async_stream_audio_from_file(file_path: str) -> AsyncIterable[bytes]:
-    """Stream audio from a file, skipping the WAV header."""
+# --- НОВАЯ СИНХРОННАЯ ФУНКЦИЯ ДЛЯ ЧТЕНИЯ ФАЙЛА ---
+def _read_wav_file_sync(source_path: str) -> bytes:
+    """
+    Reads a WAV file in a blocking manner. To be run in executor.
+    Returns raw PCM data.
+    """
     try:
-        with open(file_path, "rb") as audio_file:
-            # WAV files have a header (usually 44 bytes) that contains metadata.
-            # STT engines expect a raw audio stream (raw PCM), so we skip the header.
-            audio_file.seek(44)
-            while chunk := audio_file.read(1024):
-                yield chunk
-                # Give the Python event loop a chance to breathe so we don't block it.
-                await asyncio.sleep(0)
+        with open(source_path, "rb") as f:
+            f.seek(44)  # Skip WAV header
+            return f.read()
     except FileNotFoundError:
-        # Use ServiceValidationError for errors that the user should see in the UI.
-        raise ServiceValidationError(f"Audio file not found at path: {file_path}")
+        # Ошибки здесь будут перехвачены и обернуты в ServiceValidationError
+        raise
     except Exception as e:
-        raise ServiceValidationError(f"Error reading audio file '{file_path}': {e}")
+        _LOGGER.error("Error reading WAV file '%s': %s", source_path, e)
+        raise
+
+
+# --- Остальные вспомогательные функции (без изменений) ---
+
+async def async_transcode_to_bytes(source_path: str) -> bytes:
+    _LOGGER.debug("Transcoding %s to in-memory WAV format", source_path)
+    command = [
+        "ffmpeg", "-i", source_path, "-f", "wav", "-acodec", "pcm_s16le",
+        "-ar", "16000", "-ac", "1", "-",
+    ]
+    process = await asyncio.create_subprocess_exec(
+        *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout_data, stderr_data = await process.communicate()
+    if process.returncode != 0:
+        _LOGGER.error("FFmpeg failed with code %s: %s", process.returncode, stderr_data.decode(errors='ignore'))
+        raise ServiceValidationError(f"Failed to transcode audio file: {source_path}")
+    wav_header_size = 44
+    if len(stdout_data) > wav_header_size:
+        return stdout_data[wav_header_size:]
+    raise ServiceValidationError("Transcoding resulted in empty audio data.")
+
+
+async def _async_stream_from_bytes(data: bytes, chunk_size: int = 4096) -> AsyncIterable[bytes]:
+    buffer = io.BytesIO(data)
+    while chunk := buffer.read(chunk_size):
+        yield chunk
+        await asyncio.sleep(0)
 
 
 class ServiceCallData:
-    """A class to store and validate data from the service call."""
     def __init__(self, data_call: ServiceCall):
-        """Initialize the service call data."""
         self.stt_entity_id: str | None = data_call.data.get("entity_id")
         self.file_path: str | None = data_call.data.get("file_path")
         self.language: str | None = data_call.data.get("language")
-        
         self.validate()
 
     def validate(self) -> None:
-        """Validate the service call data."""
-        if not self.stt_entity_id:
-            raise ServiceValidationError("Service call failed: 'entity_id' is required.")
-        if not self.file_path:
-            raise ServiceValidationError("Service call failed: 'file_path' is required.")
+        if not self.stt_entity_id: raise ServiceValidationError("'entity_id' is required.")
+        if not self.file_path: raise ServiceValidationError("'file_path' is required.")
 
 
+# --- МОДИФИЦИРУЕМ ОСНОВНУЮ ФУНКЦИЮ ---
 async def async_recognize_and_get_response(hass: HomeAssistant, service_data: ServiceCallData) -> dict:
-    """
-    Performs the STT recognition and returns a dictionary with the result.
-    This function contains the core logic.
-    """
+    source_path = service_data.file_path
+    
+    try:
+        if not source_path.lower().endswith(".wav"):
+            audio_data = await async_transcode_to_bytes(source_path)
+        else:
+            # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+            # Выполняем блокирующее чтение в отдельном потоке
+            _LOGGER.debug("Reading WAV file %s in executor", source_path)
+            audio_data = await hass.async_add_executor_job(
+                _read_wav_file_sync, source_path
+            )
+            # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+    except FileNotFoundError:
+        raise ServiceValidationError(f"Audio file not found at path: {source_path}")
+    except Exception as e:
+        # Перехватываем другие возможные ошибки из _read_wav_file_sync
+        raise ServiceValidationError(f"Error processing audio file '{source_path}': {e}")
+
+
     stt_provider = stt.async_get_speech_to_text_entity(hass, service_data.stt_entity_id)
     if stt_provider is None:
-        raise ServiceValidationError(f"STT provider with entity_id '{service_data.stt_entity_id}' not found.")
-
-    # --- Language selection logic ---
-    target_language = service_data.language
+        raise ServiceValidationError(f"STT provider '{service_data.stt_entity_id}' not found.")
+    
+    target_language = service_data.language or hass.config.language
     supported_languages = stt_provider.supported_languages
-
-    # 1. If user did not specify a language, try to use the system default.
-    if not target_language:
-        target_language = hass.config.language
-        _LOGGER.debug("Language not specified, using system default: %s", target_language)
-
-    # 2. Check if the provider supports the target language.
-    # language_util.matches() is a smart function that understands variants (e.g., ru, ru-RU).
     if not language_util.matches(target_language, supported_languages):
-        error_msg = (
-            f"Language '{target_language}' is not supported by {service_data.stt_entity_id}. "
-            f"Supported languages are: {', '.join(supported_languages)}"
-        )
-        
-        # If the language was the system default, it might just not be supported.
-        # In this case, fall back to the first available language from the provider.
-        if service_data.language is None and supported_languages:
-             _LOGGER.warning(error_msg)
+         if service_data.language is None and supported_languages:
              target_language = supported_languages[0]
-             _LOGGER.warning("Falling back to the first supported language: %s", target_language)
-        else:
-             # If the user explicitly requested an unsupported language, it's a clear error.
-             raise ServiceValidationError(error_msg)
-
+         else:
+             raise ServiceValidationError(f"Language '{target_language}' is not supported.")
+    
     _LOGGER.info("Using language: %s for recognition.", target_language)
-    # --- End of language selection logic ---
     
     metadata = stt.SpeechMetadata(
-        language=target_language, # <-- Use the determined language
-        format=stt.AudioFormats.WAV, 
-        codec=stt.AudioCodecs.PCM,
-        bit_rate=stt.AudioBitRates.BITRATE_16, 
-        sample_rate=stt.AudioSampleRates.SAMPLERATE_16000,
+        language=target_language, format=stt.AudioFormats.WAV, codec=stt.AudioCodecs.PCM,
+        bit_rate=stt.AudioBitRates.BITRATE_16, sample_rate=stt.AudioSampleRates.SAMPLERATE_16000,
         channel=stt.AudioChannels.CHANNEL_MONO
     )
     
     try:
-        audio_stream = _async_stream_audio_from_file(service_data.file_path)
-        _LOGGER.info("Starting recognition for '%s' with '%s'...", service_data.file_path, service_data.stt_entity_id)
+        audio_stream = _async_stream_from_bytes(audio_data)
+        _LOGGER.info("Starting recognition for file '%s'...", source_path)
         result = await stt_provider.internal_async_process_audio_stream(metadata, audio_stream)
 
         if result.result == stt.SpeechResultState.SUCCESS:
             _LOGGER.info("Recognition successful! Text: '%s'", result.text)
             return {"text": result.text}
         
-        _LOGGER.warning("Recognition failed. Result state: %s", result.result)
         raise ServiceValidationError(f"Recognition failed. Result state: {result.result}")
 
     except ServiceValidationError as e:
-        # Re-raise validation errors so they are visible in the UI.
         raise e
     except Exception as e:
-        # Log other, unexpected errors and return a generic error message.
         _LOGGER.error("An unexpected error occurred during STT processing: %s", e, exc_info=True)
         raise ServiceValidationError("An unexpected error occurred during STT processing.")
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Audio Recognizer from a config entry."""
-
     async def handle_recognize_file_service(call: ServiceCall) -> dict:
-        """
-        Handles the service call, validates input, and returns the result from the core function.
-        Home Assistant will automatically handle the returned dictionary as a service response.
-        """
         service_data = ServiceCallData(call)
         return await async_recognize_and_get_response(hass, service_data)
 
     hass.services.async_register(
-        DOMAIN, 
-        "recognize_file", 
-        handle_recognize_file_service,
+        DOMAIN, "recognize_file", handle_recognize_file_service,
         supports_response=SupportsResponse.ONLY
     )
-    
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
     hass.services.async_remove(DOMAIN, "recognize_file")
     return True
