@@ -19,7 +19,6 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-# --- НОВАЯ СИНХРОННАЯ ФУНКЦИЯ ДЛЯ ЧТЕНИЯ ФАЙЛА ---
 def _read_wav_file_sync(source_path: str) -> bytes:
     """
     Reads a WAV file in a blocking manner. To be run in executor.
@@ -30,14 +29,11 @@ def _read_wav_file_sync(source_path: str) -> bytes:
             f.seek(44)  # Skip WAV header
             return f.read()
     except FileNotFoundError:
-        # Ошибки здесь будут перехвачены и обернуты в ServiceValidationError
         raise
     except Exception as e:
         _LOGGER.error("Error reading WAV file '%s': %s", source_path, e)
         raise
 
-
-# --- Остальные вспомогательные функции (без изменений) ---
 
 async def async_transcode_to_bytes(source_path: str) -> bytes:
     _LOGGER.debug("Transcoding %s to in-memory WAV format", source_path)
@@ -77,7 +73,6 @@ class ServiceCallData:
         if not self.file_path: raise ServiceValidationError("'file_path' is required.")
 
 
-# --- МОДИФИЦИРУЕМ ОСНОВНУЮ ФУНКЦИЮ ---
 async def async_recognize_and_get_response(hass: HomeAssistant, service_data: ServiceCallData) -> dict:
     source_path = service_data.file_path
     
@@ -85,17 +80,14 @@ async def async_recognize_and_get_response(hass: HomeAssistant, service_data: Se
         if not source_path.lower().endswith(".wav"):
             audio_data = await async_transcode_to_bytes(source_path)
         else:
-            # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
-            # Выполняем блокирующее чтение в отдельном потоке
             _LOGGER.debug("Reading WAV file %s in executor", source_path)
             audio_data = await hass.async_add_executor_job(
                 _read_wav_file_sync, source_path
             )
-            # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
+
     except FileNotFoundError:
         raise ServiceValidationError(f"Audio file not found at path: {source_path}")
     except Exception as e:
-        # Перехватываем другие возможные ошибки из _read_wav_file_sync
         raise ServiceValidationError(f"Error processing audio file '{source_path}': {e}")
 
 
