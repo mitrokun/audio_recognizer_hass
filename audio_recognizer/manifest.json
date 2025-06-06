@@ -1,0 +1,10 @@
+{
+  "domain": "audio_recognizer",
+  "name": "Audio Recognizer",
+  "config_flow": true,
+  "documentation": "https://github.com/mitrokun/ha-audio-recognizer",
+  "codeowners": ["@mitrokun"],
+  "requirements": [],
+  "iot_class": "local_push",
+  "version": "1.0.0"
+}

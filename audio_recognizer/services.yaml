@@ -1,0 +1,26 @@
+recognize_file:
+  name: Recognize Audio File
+  description: Recognizes speech from an audio file using a specified STT provider.
+  fields:
+    entity_id:
+      name: STT Provider
+      description: The Speech-to-Text entity to use for recognition.
+      required: true
+      example: "stt.wyoming"
+      selector:
+        entity:
+          domain: stt
+    file_path:
+      name: File Path
+      description: The full path to the WAV audio file within the Home Assistant container.
+      required: true
+      example: "/media/my_test_audio.wav"
+      selector:
+        text:
+    language:
+      name: Language
+      description: The language to use for recognition. If not provided, the system's default language will be attempted.
+      required: false
+      example: "ru"
+      selector:
+        language:
