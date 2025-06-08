@@ -19,24 +19,11 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 
-def _read_wav_file_sync(source_path: str) -> bytes:
-    """
-    Reads a WAV file in a blocking manner. To be run in executor.
-    Returns raw PCM data.
-    """
-    try:
-        with open(source_path, "rb") as f:
-            f.seek(44)  # Skip WAV header
-            return f.read()
-    except FileNotFoundError:
-        raise
-    except Exception as e:
-        _LOGGER.error("Error reading WAV file '%s': %s", source_path, e)
-        raise
-
-
 async def async_transcode_to_bytes(source_path: str) -> bytes:
-    _LOGGER.debug("Transcoding %s to in-memory WAV format", source_path)
+    """
+    Transcodes ANY audio file to a raw 16-bit, 16kHz, mono PCM byte array in memory.
+    """
+    _LOGGER.debug("Transcoding %s to standardized in-memory WAV format", source_path)
     command = [
         "ffmpeg", "-i", source_path, "-f", "wav", "-acodec", "pcm_s16le",
         "-ar", "16000", "-ac", "1", "-",
@@ -62,6 +49,7 @@ async def _async_stream_from_bytes(data: bytes, chunk_size: int = 4096) -> Async
 
 
 class ServiceCallData:
+
     def __init__(self, data_call: ServiceCall):
         self.stt_entity_id: str | None = data_call.data.get("entity_id")
         self.file_path: str | None = data_call.data.get("file_path")
@@ -77,16 +65,13 @@ async def async_recognize_and_get_response(hass: HomeAssistant, service_data: Se
     source_path = service_data.file_path
     
     try:
-        if not source_path.lower().endswith(".wav"):
-            audio_data = await async_transcode_to_bytes(source_path)
-        else:
-            _LOGGER.debug("Reading WAV file %s in executor", source_path)
-            audio_data = await hass.async_add_executor_job(
-                _read_wav_file_sync, source_path
-            )
+        audio_data = await async_transcode_to_bytes(source_path)
 
     except FileNotFoundError:
         raise ServiceValidationError(f"Audio file not found at path: {source_path}")
+    except ServiceValidationError as e:
+        # Перебрасываем ошибки транскодирования
+        raise e
     except Exception as e:
         raise ServiceValidationError(f"Error processing audio file '{source_path}': {e}")
 
@@ -95,6 +80,7 @@ async def async_recognize_and_get_response(hass: HomeAssistant, service_data: Se
     if stt_provider is None:
         raise ServiceValidationError(f"STT provider '{service_data.stt_entity_id}' not found.")
     
+
     target_language = service_data.language or hass.config.language
     supported_languages = stt_provider.supported_languages
     if not language_util.matches(target_language, supported_languages):
