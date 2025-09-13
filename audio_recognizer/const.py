@@ -6,4 +6,5 @@ CONF_TELEGRAM_BOT_TOKEN = "telegram_bot_token"
 CONF_TELEGRAM_CHAT_IDS = "telegram_chat_ids"
 CONF_TELEGRAM_STT_ENTITY_ID = "telegram_stt_entity_id"
 
+CONF_TELEGRAM_SEND_REPLY = "telegram_send_reply"
 EVENT_TRANSCRIPTION_RECEIVED = "audio_recognizer_transcription"

@@ -9,7 +9,7 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlowWithConfigEntry,
+    OptionsFlowWithConfigEntry,  # Используем современный класс
 )
 from homeassistant.core import callback
 from homeassistant.helpers import selector
@@ -19,7 +19,8 @@ from .const import (
     CONF_TELEGRAM_ENABLED,
     CONF_TELEGRAM_BOT_TOKEN,
     CONF_TELEGRAM_CHAT_IDS,
-    CONF_TELEGRAM_STT_ENTITY_ID
+    CONF_TELEGRAM_STT_ENTITY_ID,
+    CONF_TELEGRAM_SEND_REPLY,
 )
 
 
@@ -51,7 +52,6 @@ class AudioRecognizerConfigFlow(ConfigFlow, domain=DOMAIN):
 class AudioRecognizerOptionsFlow(OptionsFlowWithConfigEntry):
     """Handle an options flow for Audio Recognizer."""
 
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -64,6 +64,11 @@ class AudioRecognizerOptionsFlow(OptionsFlowWithConfigEntry):
                 vol.Required(
                     CONF_TELEGRAM_ENABLED,
                     default=self.options.get(CONF_TELEGRAM_ENABLED, False),
+                ): bool,
+                vol.Required(
+                    CONF_TELEGRAM_SEND_REPLY,
+                    # По умолчанию опция будет включена для обратной совместимости
+                    default=self.options.get(CONF_TELEGRAM_SEND_REPLY, True),
                 ): bool,
                 vol.Optional(
                     CONF_TELEGRAM_BOT_TOKEN,

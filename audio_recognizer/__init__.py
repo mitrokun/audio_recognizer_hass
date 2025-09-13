@@ -19,6 +19,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import language as language_util
 
+# Telegram-related imports
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, CallbackContext
 
@@ -28,7 +29,8 @@ from .const import (
     CONF_TELEGRAM_BOT_TOKEN,
     CONF_TELEGRAM_CHAT_IDS,
     CONF_TELEGRAM_STT_ENTITY_ID,
-    EVENT_TRANSCRIPTION_RECEIVED
+    EVENT_TRANSCRIPTION_RECEIVED,
+    CONF_TELEGRAM_SEND_REPLY
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -74,7 +76,6 @@ async def _async_stream_from_bytes(data: bytes, chunk_size: int = 4096) -> Async
         yield chunk
         await asyncio.sleep(0)
 
-
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.data.setdefault(DOMAIN, {})
     return True
@@ -98,7 +99,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.ONLY
     )
     
-    # action send_reply
+    # Action send_reply
     async def handle_send_reply_service(call: ServiceCall):
         chat_id = call.data.get("chat_id")
         message = call.data.get("message")
@@ -170,10 +171,10 @@ class TelegramBotManager:
         except Exception as e:
             _LOGGER.error("Failed to send Telegram message to chat_id %s: %s", chat_id, e)
 
+
     async def handle_voice_message(self, update: Update, context: CallbackContext):
         """Handles incoming voice messages from Telegram without disk operations."""
         chat_id_str = str(update.message.chat_id)
-        # ... (проверка chat_id и stt_entity_id без изменений)
         allowed_ids_str = self.entry.options.get(CONF_TELEGRAM_CHAT_IDS, "")
         allowed_ids = [s.strip() for s in allowed_ids_str.split(',') if s.strip()]
         if allowed_ids and chat_id_str not in allowed_ids:
@@ -183,6 +184,8 @@ class TelegramBotManager:
         if not stt_entity_id:
             _LOGGER.error("Telegram received a message, but no STT provider is configured.")
             return
+
+        should_send_reply = self.entry.options.get(CONF_TELEGRAM_SEND_REPLY, True)
 
         try:
             voice_file = await update.message.voice.get_file()
@@ -198,18 +201,22 @@ class TelegramBotManager:
 
             if text:
                 _LOGGER.info("Recognition successful. Text: '%s'. Firing event.", text)
-                await update.message.reply_text(f"🗣️: {text}") 
+                
                 self.hass.bus.async_fire(
                     EVENT_TRANSCRIPTION_RECEIVED,
                     {"text": text, "chat_id": chat_id_str, "username": update.message.from_user.username}
                 )
+
+                if should_send_reply:
+                    await update.message.reply_text(f"🗣️: {text}") 
             else:
-                await update.message.reply_text("Не удалось распознать речь.")
+                if should_send_reply:
+                    await update.message.reply_text("Не удалось распознать речь.")
 
         except Exception as e:
             _LOGGER.error("Error processing voice message: %s", e, exc_info=True)
-            await update.message.reply_text(f"Произошла ошибка: {e}")
-        
+            if should_send_reply:
+                await update.message.reply_text(f"Произошла ошибка: {e}")        
 
 async def async_process_audio_data(
     hass: HomeAssistant, stt_entity_id: str, language: str | None, audio_data: bytes
