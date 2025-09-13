@@ -12,7 +12,7 @@ data:
 >One bot - one integration!
 
 You can enable interaction with your TG bot in the settings and select the STT. After that, audio messages sent to the bot will be decoded accordingly.
-This action also generates an event in HA, allowing you to create automations. For example, voice control is possible:
+This action also generates an event in HA, allowing you to create automations. For example, interaction with Assist:
 ```yaml
 triggers:
   - event_type: audio_recognizer_transcription
