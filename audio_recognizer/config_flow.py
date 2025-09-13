@@ -9,7 +9,7 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlowWithConfigEntry,  # Используем современный класс
+    OptionsFlowWithConfigEntry,
 )
 from homeassistant.core import callback
 from homeassistant.helpers import selector
@@ -51,10 +51,6 @@ class AudioRecognizerConfigFlow(ConfigFlow, domain=DOMAIN):
 class AudioRecognizerOptionsFlow(OptionsFlowWithConfigEntry):
     """Handle an options flow for Audio Recognizer."""
 
-    # --- ГЛАВНОЕ ИСПРАВЛЕНИЕ ---
-    # Конструктор __init__ больше не нужен!
-    # Базовый класс OptionsFlowWithConfigEntry делает всю работу за нас,
-    # и это исправляет ошибку TypeError.
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
