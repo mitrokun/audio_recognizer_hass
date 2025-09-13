@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Добавление Audio Recognizer",
+        "description": "Эта интеграция не требует начальной настройки.\n\nНажмите 'Отправить', чтобы добавить сервис `audio_recognizer.recognize_file` в Home Assistant. Настройка Telegram-бота будет доступна в меню 'Настроить' после установки интеграции."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Настройки Telegram-бота",
+        "description": "Здесь вы можете активировать и настроить интеграцию с Telegram для отправки голосовых сообщений на распознавание.",
+        "data": {
+          "telegram_enabled": {
+            "name": "Включить Telegram-бота",
+            "description": "Установите этот флажок, чтобы активировать бота для приёма голосовых сообщений."
+          },
+          "telegram_bot_token": {
+            "name": "Токен Telegram-бота",
+            "description": "Введите токен вашего бота, полученный от [@BotFather](https://t.me/BotFather) в Telegram."
+          },
+          "telegram_chat_ids": {
+            "name": "Разрешённые ID чатов",
+            "description": "Перечислите через запятую ID чатов, с которых бот будет принимать сообщения. Оставьте поле пустым, чтобы принимать сообщения из любого чата."
+          },
+          "telegram_stt_entity_id": {
+            "name": "Сущность Speech-to-Text для Telegram",
+            "description": "Выберите STT-провайдера (например, Whisper, Vosk), который будет использоваться для распознавания речи из голосовых сообщений Telegram."
+          }
+        }
+      }
+    }
+  },
+  "abort": {
+    "single_instance_allowed": {
+      "title": "Интеграция уже настроена",
+      "description": "Можно добавить только один экземпляр 'Audio Recognizer'."
+    }
+  },
+  "error": {
+    "unknown": "Произошла неизвестная ошибка."
+  }
+}

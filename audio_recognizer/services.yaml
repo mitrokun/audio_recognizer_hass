@@ -24,3 +24,19 @@ recognize_file:
       example: "ru"
       selector:
         language:
+send_reply:
+  name: Send reply to Telegram
+  description: Sends a text message back to the Telegram chat from which a voice message was received.
+  fields:
+    chat_id:
+      name: Chat ID
+      description: The unique identifier for the target chat. Should be taken from the trigger event data.
+      required: true
+      selector:
+        text:
+    message:
+      name: Message
+      description: The text of the message to send.
+      required: true
+      selector:
+        text:
