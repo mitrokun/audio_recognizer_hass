@@ -19,7 +19,6 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import language as language_util
 
-# Telegram-related imports
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, CallbackContext
 
@@ -34,8 +33,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 async def async_transcode_from_path(source_path: str) -> bytes:
     """Transcodes an audio file FROM A DISK PATH to raw PCM bytes."""
@@ -54,7 +51,6 @@ async def async_transcode_from_path(source_path: str) -> bytes:
         return stdout_data[wav_header_size:]
     raise ServiceValidationError("Transcoding resulted in empty audio data.")
 
-# +++ НОВАЯ ФУНКЦИЯ ДЛЯ ТРАНСКОДИРОВАНИЯ ИЗ ПАМЯТИ +++
 async def async_transcode_from_bytes(source_data: bytes) -> bytes:
     """Transcodes an audio file FROM A BYTE ARRAY to raw PCM bytes."""
     _LOGGER.debug("Transcoding in-memory audio data to standardized WAV format")
@@ -79,15 +75,12 @@ async def _async_stream_from_bytes(data: bytes, chunk_size: int = 4096) -> Async
         await asyncio.sleep(0)
 
 
-# --- ФУНКЦИИ УСТАНОВКИ И ВЫГРУЗКИ ---
-# ... (без изменений)
-
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.data.setdefault(DOMAIN, {})
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    # Сервис recognize_file по-прежнему работает с файлами
+
     async def handle_recognize_file_service(call: ServiceCall) -> dict[str, Any]:
         file_path = call.data.get("file_path")
         stt_entity_id = call.data.get("entity_id")
@@ -105,7 +98,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.ONLY
     )
     
-    # Сервис send_reply
+    # action send_reply
     async def handle_send_reply_service(call: ServiceCall):
         chat_id = call.data.get("chat_id")
         message = call.data.get("message")
@@ -136,10 +129,7 @@ async def update_listener(hass: HomeAssistant, entry: ConfigEntry):
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-# --- КЛАСС TELEGRAM BOT MANAGER ---
-
 class TelegramBotManager:
-    # ... (методы __init__, start_bot_if_enabled, stop_bot, async_send_message без изменений)
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry):
         self.hass = hass
         self.entry = entry
@@ -180,7 +170,6 @@ class TelegramBotManager:
         except Exception as e:
             _LOGGER.error("Failed to send Telegram message to chat_id %s: %s", chat_id, e)
 
-    # +++ ГЛАВНОЕ ИЗМЕНЕНИЕ: ОБРАБОТЧИК ГОЛОСОВЫХ СООБЩЕНИЙ ТЕПЕРЬ НЕ ИСПОЛЬЗУЕТ ДИСК +++
     async def handle_voice_message(self, update: Update, context: CallbackContext):
         """Handles incoming voice messages from Telegram without disk operations."""
         chat_id_str = str(update.message.chat_id)
@@ -222,7 +211,6 @@ class TelegramBotManager:
             await update.message.reply_text(f"Произошла ошибка: {e}")
         
 
-# --- ОСНОВНАЯ ФУНКЦИЯ РАСПОЗНАВАНИЯ (теперь принимает готовые аудиоданные) ---
 async def async_process_audio_data(
     hass: HomeAssistant, stt_entity_id: str, language: str | None, audio_data: bytes
 ) -> dict[str, Any]:
@@ -230,7 +218,6 @@ async def async_process_audio_data(
     stt_provider = stt.async_get_speech_to_text_entity(hass, stt_entity_id)
     if stt_provider is None: raise ServiceValidationError(f"STT provider '{stt_entity_id}' not found.")
     
-    # ... (логика определения языка без изменений)
     target_language = language or hass.config.language
     supported_languages = stt_provider.supported_languages
     if not language_util.matches(target_language, supported_languages):
