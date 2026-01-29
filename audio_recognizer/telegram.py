@@ -14,6 +14,7 @@ from .const import (
     CONF_TELEGRAM_SEND_REPLY,
     CONF_TELEGRAM_STT_ENTITY_ID,
     EVENT_TRANSCRIPTION_RECEIVED,
+    EVENT_TEXT_RECEIVED,
 )
 from .exceptions import NoAudioStreamError
 from .helpers import async_process_audio_data, async_transcode_from_bytes
@@ -46,8 +47,14 @@ class TelegramBotManager:
 
         self.telegram_app = await self.hass.async_add_executor_job(build_app)
 
+        # Обработчик для аудио
         media_filters = filters.VOICE | filters.AUDIO | filters.Document.AUDIO
         self.telegram_app.add_handler(MessageHandler(media_filters, self.handle_audio_message))
+
+        # Обработчик текста
+        text_filters = (filters.TEXT | filters.FORWARDED) & ~filters.COMMAND
+        self.telegram_app.add_handler(MessageHandler(text_filters, self.handle_text_message))
+
 
         await self.telegram_app.initialize()
         await self.telegram_app.start()
@@ -82,7 +89,28 @@ class TelegramBotManager:
         except Exception as e:
             _LOGGER.error("Failed to send Telegram message to chat_id %s: %s", chat_id, e)
 
-    # --- ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+    async def handle_text_message(self, update: Update, context: CallbackContext):
+        """Handle incoming text and forwarded messages from Telegram."""
+        chat_id_str = str(update.message.chat_id)
+        allowed_ids_str = self.entry.options.get(CONF_TELEGRAM_CHAT_IDS, "")
+        allowed_ids = [s.strip() for s in allowed_ids_str.split(',') if s.strip()]
+
+        if allowed_ids and chat_id_str not in allowed_ids:
+            _LOGGER.warning("Ignoring text message from unauthorized chat_id: %s", chat_id_str)
+            return
+
+        text = update.message.text or update.message.caption
+        username = update.message.from_user.username
+
+        if not text:
+            return
+
+        _LOGGER.info("Received text: '%s' from chat_id: %s. Firing event.", text, chat_id_str)
+        self.hass.bus.async_fire(
+            EVENT_TEXT_RECEIVED,
+            {"text": text, "chat_id": chat_id_str, "username": username}
+        )
+
     async def handle_audio_message(self, update: Update, context: CallbackContext):
         """Handle incoming voice, audio, and audio-document messages from Telegram."""
         chat_id_str = str(update.message.chat_id)
