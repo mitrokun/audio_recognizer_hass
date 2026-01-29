@@ -14,7 +14,8 @@
         "description": "Здесь вы можете активировать и настроить интеграцию с Telegram для отправки голосовых сообщений на распознавание.",
         "data": {
           "telegram_enabled": "Включить Telegram-бота",
-          "telegram_send_reply": "Отправлять распознанный текст в чат",
+          "telegram_send_reply": "Отправлять распознанный текст в ответ",
+          "telegram_max_duration": "Максимальная продолжительность входящих файлов",
           "telegram_bot_token": "Токен",
           "telegram_chat_ids": "Разрешённые ID",
           "telegram_stt_entity_id": "STT для Telegram"

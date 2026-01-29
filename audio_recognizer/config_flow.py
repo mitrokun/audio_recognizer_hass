@@ -9,7 +9,7 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlowWithConfigEntry,  # Используем современный класс
+    OptionsFlowWithConfigEntry,
 )
 from homeassistant.core import callback
 from homeassistant.helpers import selector
@@ -21,6 +21,8 @@ from .const import (
     CONF_TELEGRAM_CHAT_IDS,
     CONF_TELEGRAM_STT_ENTITY_ID,
     CONF_TELEGRAM_SEND_REPLY,
+    # --- ИМПОРТИРУЕМ НОВУЮ КОНСТАНТУ ---
+    CONF_TELEGRAM_MAX_DURATION,
 )
 
 
@@ -67,9 +69,22 @@ class AudioRecognizerOptionsFlow(OptionsFlowWithConfigEntry):
                 ): bool,
                 vol.Required(
                     CONF_TELEGRAM_SEND_REPLY,
-                    # По умолчанию опция будет включена для обратной совместимости
                     default=self.options.get(CONF_TELEGRAM_SEND_REPLY, True),
                 ): bool,
+                # --- ДОБАВЛЯЕМ НОВЫЙ ПАРАМЕТР В СХЕМУ ---
+                vol.Optional(
+                    CONF_TELEGRAM_MAX_DURATION,
+                    # По умолчанию 180 секунд (3 минуты). 0 - без лимита.
+                    default=self.options.get(CONF_TELEGRAM_MAX_DURATION, 180),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=3600, # Лимит в 1 час, чтобы избежать случайных огромных значений
+                        step=1,
+                        mode="box",
+                        unit_of_measurement="seconds",
+                    )
+                ),
                 vol.Optional(
                     CONF_TELEGRAM_BOT_TOKEN,
                     description={"suggested_value": self.options.get(CONF_TELEGRAM_BOT_TOKEN)},
