@@ -43,3 +43,12 @@ actions:
       message: "{{answer.response.speech.plain.speech}}"
       chat_id: "{{ trigger.event.data.chat_id }}"
 ```
+---
+
+If you use a combination of a streaming [asr server](https://github.com/mitrokun/wyoming_streaming_asr) and an experimental wyoming [client](https://github.com/mitrokun/asr_proxy/tree/extended), an animation with ready-made parts of the transcription will be displayed in the chat.
+
+<details>
+<summary>demo</summary>
+<img width="364" height="326" alt="ani" src="https://github.com/user-attachments/assets/dfcf82bf-8e38-479a-b40a-c3c1c25873eb" />
+
+</details>
