@@ -16,26 +16,31 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_transcode_from_bytes(source_data: bytes) -> bytes:
-    """Transcodes an audio file FROM A BYTE ARRAY to raw PCM bytes."""
-    command = ["ffmpeg", "-i", "-", "-vn", "-f", "wav", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", "-"]
+    """Transcodes an audio file from a byte array to raw PCM bytes.
+    
+    Uses '-f s16le' to output a raw PCM stream without any headers,
+    preventing metadata chunks from causing audio clicks.
+    """
+    command = ["ffmpeg", "-i", "-", "-vn", "-f", "s16le", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", "-"]
     process = await asyncio.create_subprocess_exec(
         *command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     stdout_data, stderr_data = await process.communicate(input=source_data)
+    
     if process.returncode != 0:
         error_msg = stderr_data.decode(errors='ignore')
         _LOGGER.error("FFmpeg (from bytes) failed with code %s: %s", process.returncode, error_msg)
         raise ServiceValidationError(f"Failed to transcode in-memory audio. Error: {error_msg}")
     
-    wav_header_size = 44
-    if len(stdout_data) > wav_header_size:
-        return stdout_data[wav_header_size:]
+    if stdout_data:
+        return stdout_data
     
     _LOGGER.warning("Transcoding from bytes resulted in empty audio data. The source likely has no audio stream.")
     raise NoAudioStreamError("The source media does not contain an audio stream.")
 
 
 async def _async_stream_from_bytes(data: bytes, chunk_size: int = 4096) -> AsyncIterable[bytes]:
+    """Yields audio chunks from a byte array for streaming."""
     buffer = io.BytesIO(data)
     while chunk := buffer.read(chunk_size):
         yield chunk
@@ -43,8 +48,12 @@ async def _async_stream_from_bytes(data: bytes, chunk_size: int = 4096) -> Async
 
 
 async def async_transcode_from_path(source_path: str) -> bytes:
-    """Transcodes an audio file FROM A DISK PATH to raw PCM bytes."""
-    command = ["ffmpeg", "-i", str(source_path), "-vn", "-f", "wav", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", "-"]
+    """Transcodes an audio file from a disk path to raw PCM bytes.
+    
+    Uses '-f s16le' to output a raw PCM stream without any headers,
+    preventing metadata chunks from causing audio clicks.
+    """
+    command = ["ffmpeg", "-i", str(source_path), "-vn", "-f", "s16le", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", "-"]
     process = await asyncio.create_subprocess_exec(
         *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
@@ -55,9 +64,8 @@ async def async_transcode_from_path(source_path: str) -> bytes:
         _LOGGER.error("FFmpeg (from path) failed with code %s: %s", process.returncode, error_msg)
         raise ServiceValidationError(f"Failed to transcode audio file: {source_path}. Error: {error_msg}")
     
-    wav_header_size = 44
-    if len(stdout_data) > wav_header_size:
-        return stdout_data[wav_header_size:]
+    if stdout_data:
+        return stdout_data
     
     _LOGGER.warning("Transcoding from path resulted in empty audio data. The source likely has no audio stream.")
     raise NoAudioStreamError("The source file does not contain an audio stream.")
@@ -68,16 +76,21 @@ async def async_process_audio_data(
 ) -> dict[str, Any]:
     """Processes raw PCM audio data using an STT provider."""
     stt_provider = stt.async_get_speech_to_text_entity(hass, stt_entity_id)
-    if stt_provider is None: raise ServiceValidationError(f"STT provider '{stt_entity_id}' not found.")
+    if stt_provider is None:
+        raise ServiceValidationError(f"STT provider '{stt_entity_id}' not found.")
     
     target_language = language or hass.config.language
     supported_languages = stt_provider.supported_languages
+    
     if not language_util.matches(target_language, supported_languages):
-         if language is None and supported_languages:
-             _LOGGER.warning("Language '%s' not supported, falling back to first available: %s", target_language, supported_languages[0])
-             target_language = supported_languages[0]
-         else: raise ServiceValidationError(f"Language '{target_language}' is not supported by {stt_entity_id}.")
+        if language is None and supported_languages:
+            _LOGGER.warning("Language '%s' not supported, falling back to first available: %s", target_language, supported_languages[0])
+            target_language = supported_languages[0]
+        else:
+            raise ServiceValidationError(f"Language '{target_language}' is not supported by {stt_entity_id}.")
 
+    # STT metadata inherently uses stt.AudioFormats.WAV combined with stt.AudioCodecs.PCM
+    # to indicate a raw PCM stream within the Home Assistant ecosystem.
     metadata = stt.SpeechMetadata(
         language=target_language, format=stt.AudioFormats.WAV, codec=stt.AudioCodecs.PCM,
         bit_rate=stt.AudioBitRates.BITRATE_16, sample_rate=stt.AudioSampleRates.SAMPLERATE_16000,
