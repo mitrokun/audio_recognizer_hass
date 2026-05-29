@@ -147,25 +147,16 @@ class TelegramBotManager:
             _LOGGER.debug("Ignoring late chunk for finalized draft_id: %s", draft_id)
             return
 
-        # Clean the raw chunk from STT technical ellipses and extra spaces
-        clean_chunk = raw_text.replace("...", "").strip()
+        clean_chunk = raw_text.replace("...", "")
         if not clean_chunk:
             return
 
-        # Retrieve and update accumulated text for this draft session
         current_text = self._accumulated_texts.get(draft_id, "")
-        if current_text:
-            # Smart join: avoid adding a space before punctuation marks (e.g., "word, word")
-            if clean_chunk.startswith((".", ",", "!", "?", ":", ";")):
-                current_text += clean_chunk
-            else:
-                current_text += " " + clean_chunk
-        else:
-            current_text = clean_chunk
+        current_text += clean_chunk
 
         self._accumulated_texts[draft_id] = current_text
 
-        # Rate-limiting: do not send updates to Telegram more than once per 1.0 second
+        # Rate-limiting: do not send updates to Telegram more than once per 0.3 seconds
         # to strictly adhere to Telegram's Flood Control policy on message edits.
         current_time = time.time()
         last_sent = self._last_sent_times.get(draft_id, 0.0)
